@@ -1,5 +1,110 @@
+// ─── Settings system ───
+const DEFAULTS = {
+  frictionLinear:       0.0003,
+  frictionProportional: 0.0025,
+  minVelocity:          0.7,
+  maxVelocity:          3.5,
+  velocityMultiplier:   3.5,
+  randomStrength:       0.15,
+};
+
+const SETTINGS_META = {
+  velocityMultiplier:   { label: 'Сила раскрутки',    min: 1,      max: 8,     step: 0.5  },
+  minVelocity:          { label: 'Мин. скорость',     min: 0.2,    max: 2,     step: 0.1  },
+  maxVelocity:          { label: 'Макс. скорость',    min: 1.5,    max: 6,     step: 0.5  },
+  frictionProportional: { label: 'Трение',            min: 0.0005, max: 0.008, step: 0.0005 },
+  frictionLinear:       { label: 'Трение (линейное)', min: 0.0001, max: 0.001, step: 0.0001 },
+  randomStrength:       { label: 'Сила рандома',      min: 0,      max: 0.5,   step: 0.05 },
+};
+
+let settings = { ...DEFAULTS };
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('zombie_settings'));
+    if (saved) Object.assign(settings, saved);
+  } catch (e) {}
+}
+
+function saveSettings() {
+  try { localStorage.setItem('zombie_settings', JSON.stringify(settings)); } catch (e) {}
+}
+
+function resetSettings() {
+  settings = { ...DEFAULTS };
+  saveSettings();
+}
+
+loadSettings();
+
+// ─── Settings dialog ───
+function openSettings() {
+  if (document.getElementById('settingsDialog')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'settingsDialog';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'background:#2a2a4a;border-radius:16px;padding:20px;max-width:360px;width:100%;max-height:90vh;overflow-y:auto;color:#eee;font-family:inherit;';
+
+  let html = '<h2 style="margin:0 0 16px;font-size:1.1rem;text-align:center;">Настройки</h2>';
+
+  for (const [key, meta] of Object.entries(SETTINGS_META)) {
+    const val = settings[key];
+    const decimals = meta.step < 0.001 ? 4 : meta.step < 0.01 ? 3 : meta.step < 0.1 ? 2 : 1;
+    html += `
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:4px;">
+          <span>${meta.label}</span>
+          <span id="val_${key}" style="opacity:0.7;font-variant-numeric:tabular-nums;">${val.toFixed(decimals)}</span>
+        </div>
+        <input type="range" id="rng_${key}" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${val}"
+          style="width:100%;accent-color:#e74c3c;">
+      </div>`;
+  }
+
+  html += `
+    <div style="display:flex;gap:10px;margin-top:18px;">
+      <button id="settingsReset" style="flex:1;padding:10px;border:1px solid rgba(255,255,255,0.2);background:transparent;color:#eee;border-radius:8px;cursor:pointer;font-size:0.85rem;">Сброс</button>
+      <button id="settingsClose" style="flex:1;padding:10px;border:none;background:#e74c3c;color:#fff;border-radius:8px;cursor:pointer;font-size:0.85rem;font-weight:600;">Готово</button>
+    </div>`;
+
+  panel.innerHTML = html;
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+
+  // Bind sliders
+  for (const [key, meta] of Object.entries(SETTINGS_META)) {
+    const rng = document.getElementById('rng_' + key);
+    const valEl = document.getElementById('val_' + key);
+    const decimals = meta.step < 0.001 ? 4 : meta.step < 0.01 ? 3 : meta.step < 0.1 ? 2 : 1;
+    rng.addEventListener('input', () => {
+      settings[key] = parseFloat(rng.value);
+      valEl.textContent = settings[key].toFixed(decimals);
+      saveSettings();
+    });
+  }
+
+  document.getElementById('settingsReset').addEventListener('click', () => {
+    resetSettings();
+    for (const [key, meta] of Object.entries(SETTINGS_META)) {
+      const rng = document.getElementById('rng_' + key);
+      const valEl = document.getElementById('val_' + key);
+      const decimals = meta.step < 0.001 ? 4 : meta.step < 0.01 ? 3 : meta.step < 0.1 ? 2 : 1;
+      rng.value = settings[key];
+      valEl.textContent = settings[key].toFixed(decimals);
+    }
+  });
+
+  const close = () => overlay.remove();
+  document.getElementById('settingsClose').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+}
+
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+
 // ─── Sector config ───
-// Clockwise from 12 o'clock. 1 & 2 adjacent (big), then 3 & 4 adjacent (small).
 const SECTORS = [
   { value: 1, label: 'Бег',          color: '#e8c830', icon: '🏃', iconFile: 'icons/1.png', degrees: 110 },
   { value: 2, label: 'Зомби кусает', color: '#4caf50', icon: '🧟', iconFile: 'icons/2.png', degrees: 110 },
@@ -35,7 +140,6 @@ function resizeCanvas() {
   wrapper.style.width = dim + 'px';
   wrapper.style.height = dim + 'px';
 
-  // Scale pointer proportionally to wheel size
   const ptrW = Math.max(10, dim * 0.035);
   const ptrH = ptrW * 2;
   const ptr = document.getElementById('pointer');
@@ -63,20 +167,17 @@ function drawWheel(rotationDeg) {
   ctx.translate(cx, cy);
   ctx.rotate(degToRad(rotationDeg));
 
-  let startAngle = -Math.PI / 2; // 12 o'clock
+  let startAngle = -Math.PI / 2;
 
-  // Pulsing highlight intensity (0..1)
   const pulse = highlightSector ? 0.5 + 0.5 * Math.sin(highlightPhase) : 0;
+  const innerR = radius * 0.80;
 
-  const innerR = radius * 0.80; // boundary between number ring and icon area
-
-  // ── Pass 1: Draw full sectors (background) ──
+  // ── Pass 1: Sectors background ──
   SECTORS.forEach(sec => {
     const sweep = degToRad(sec.degrees);
     const endAngle = startAngle + sweep;
     const isHighlighted = highlightSector && highlightSector.value === sec.value;
 
-    // Full sector fill
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.arc(0, 0, radius, startAngle, endAngle);
@@ -84,7 +185,7 @@ function drawWheel(rotationDeg) {
     ctx.fillStyle = sec.color;
     ctx.fill();
 
-    // Darken the outer ring slightly for contrast
+    // Darken outer ring for contrast
     ctx.beginPath();
     ctx.arc(0, 0, radius, startAngle, endAngle);
     ctx.arc(0, 0, innerR, endAngle, startAngle, true);
@@ -92,7 +193,6 @@ function drawWheel(rotationDeg) {
     ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.fill();
 
-    // Dim non-winners
     if (highlightSector && !isHighlighted) {
       ctx.beginPath();
       ctx.moveTo(0, 0);
@@ -102,7 +202,6 @@ function drawWheel(rotationDeg) {
       ctx.fill();
     }
 
-    // Sector divider lines
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(Math.cos(startAngle) * radius, Math.sin(startAngle) * radius);
@@ -112,7 +211,6 @@ function drawWheel(rotationDeg) {
 
     startAngle = endAngle;
   });
-  // Last divider
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(Math.cos(startAngle) * radius, Math.sin(startAngle) * radius);
@@ -120,14 +218,14 @@ function drawWheel(rotationDeg) {
   ctx.lineWidth = Math.max(1, size / 300);
   ctx.stroke();
 
-  // ── Ring boundary circle ──
+  // Ring boundary
   ctx.beginPath();
   ctx.arc(0, 0, innerR, 0, Math.PI * 2);
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = Math.max(2, size / 200);
   ctx.stroke();
 
-  // ── Pass 2: Highlight glow (winning sector) ──
+  // ── Pass 2: Highlight glow ──
   startAngle = -Math.PI / 2;
   SECTORS.forEach(sec => {
     const sweep = degToRad(sec.degrees);
@@ -137,7 +235,6 @@ function drawWheel(rotationDeg) {
     if (isHighlighted) {
       const glowWidth = Math.max(6, size / 60);
 
-      // Outer glow arc
       ctx.beginPath();
       ctx.arc(0, 0, radius - glowWidth * 0.3, startAngle, endAngle);
       ctx.strokeStyle = sec.color;
@@ -149,14 +246,12 @@ function drawWheel(rotationDeg) {
       ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
 
-      // Bright edge line
       ctx.beginPath();
       ctx.arc(0, 0, radius - 1, startAngle, endAngle);
       ctx.strokeStyle = `rgba(255,255,255,${0.5 + pulse * 0.4})`;
       ctx.lineWidth = Math.max(2, size / 200);
       ctx.stroke();
 
-      // Radial edge glow
       for (const a of [startAngle, endAngle]) {
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -173,7 +268,7 @@ function drawWheel(rotationDeg) {
     startAngle = endAngle;
   });
 
-  // ── Pass 3: Icons (inner area) and Numbers (outer ring) ──
+  // ── Pass 3: Icons and numbers ──
   startAngle = -Math.PI / 2;
   SECTORS.forEach(sec => {
     const sweep = degToRad(sec.degrees);
@@ -182,7 +277,6 @@ function drawWheel(rotationDeg) {
     const midAngle = startAngle + sweep / 2;
     const dimAlpha = (highlightSector && !isHighlighted) ? 0.45 : 1;
 
-    // Icon — centered in inner area
     const iconR = radius * 0.52;
     const ix = Math.cos(midAngle) * iconR;
     const iy = Math.sin(midAngle) * iconR;
@@ -206,7 +300,6 @@ function drawWheel(rotationDeg) {
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    // Number — centered in outer ring band
     const numR = (innerR + radius) / 2;
     const nx = Math.cos(midAngle) * numR;
     const ny = Math.sin(midAngle) * numR;
@@ -265,10 +358,6 @@ let angularVel = 0;
 let spinning = false;
 let animId = null;
 
-const FRICTION_LINEAR = 0.0003;
-const FRICTION_PROPORTIONAL = 0.0025;
-const MIN_VELOCITY = 0.4;
-const MAX_VELOCITY = 3.0;
 const STOP_THRESHOLD = 0.005;
 
 function getResultSector(angleDeg) {
@@ -295,18 +384,15 @@ function startSpinAnimation() {
     const dt = now - lastTime;
     lastTime = now;
 
-    // Apply friction: proportional (smooth at low speed) + small linear (ensures stop)
     const speed = Math.abs(angularVel);
-    const frictionForce = speed * FRICTION_PROPORTIONAL + FRICTION_LINEAR;
+    const frictionForce = speed * settings.frictionProportional + settings.frictionLinear;
     angularVel -= initialSign * frictionForce * dt;
 
-    // Stop if velocity crossed zero or below threshold
     if (Math.abs(angularVel) <= STOP_THRESHOLD || (initialSign > 0 && angularVel < 0) || (initialSign < 0 && angularVel > 0)) {
       angularVel = 0;
       spinning = false;
       canvas.classList.remove('spinning');
 
-      // Highlight the winning sector with pulsing animation
       const result = getResultSector(currentAngle);
       highlightSector = result;
       highlightPhase = 0;
@@ -318,7 +404,6 @@ function startSpinAnimation() {
     currentAngle += angularVel * dt;
     drawWheel(currentAngle);
 
-    // Tick feedback every ~18 degrees
     if (Math.abs(currentAngle - lastTickAngle) > 18) {
       lastTickAngle = currentAngle;
       if (navigator.vibrate) navigator.vibrate(6);
@@ -438,7 +523,7 @@ canvas.addEventListener('pointerup', (e) => {
     inputType = 'tap';
   } else {
     const rawVel = Math.abs(releaseVel) >= Math.abs(avgVel) ? releaseVel : avgVel;
-    vel = rawVel * 2;
+    vel = rawVel * settings.velocityMultiplier;
     inputType = Math.abs(releaseVel) >= Math.abs(avgVel) ? 'release' : 'average';
   }
 
@@ -446,11 +531,11 @@ canvas.addEventListener('pointerup', (e) => {
   let speed = Math.abs(vel);
 
   const randomRaw = (Math.random() - 0.5) * 2;
-  const randomFactor = 0.1 + speed * 0.15;
+  const randomFactor = 0.1 + speed * settings.randomStrength;
   const randomDelta = randomRaw * randomFactor;
   speed += randomDelta;
 
-  speed = Math.max(MIN_VELOCITY, Math.min(MAX_VELOCITY, speed));
+  speed = Math.max(settings.minVelocity, Math.min(settings.maxVelocity, speed));
 
   angularVel = dir * speed;
 
@@ -482,7 +567,7 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (spinning) return;
     const dir = Math.random() < 0.5 ? 1 : -1;
-    angularVel = dir * (MIN_VELOCITY + Math.random() * (MAX_VELOCITY - MIN_VELOCITY));
+    angularVel = dir * (settings.minVelocity + Math.random() * (settings.maxVelocity - settings.minVelocity));
     startSpinAnimation();
   }
 });
