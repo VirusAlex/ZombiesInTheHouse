@@ -1,14 +1,12 @@
-const CACHE_NAME = 'zombie-spinner-v2';
-const ASSETS = ['./', './index.html', './style.css', './spinner.js', './manifest.json'];
+const APP_VERSION = '1.0.0';
+const CACHE_NAME = 'zombie-spinner-' + APP_VERSION;
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
+  // Delete all old caches
   e.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
@@ -17,8 +15,15 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
+// Network-first: fresh content when online, cache when offline
 self.addEventListener('fetch', (e) => {
   e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+    fetch(e.request)
+      .then((response) => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        return response;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
